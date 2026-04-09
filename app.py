@@ -1,0 +1,224 @@
+from flask import Flask, jsonify, request, render_template
+from database import get_connection, init_db
+
+# Create the Flask app. __name__ tells Flask where to look for templates and
+# static files (it uses the directory this file lives in).
+app = Flask(__name__)
+
+
+@app.route("/")
+def index():
+    """Serve the dashboard HTML page.
+
+    render_template() looks in the templates/ folder and returns the file
+    as an HTTP response. The browser receives it and displays the page.
+    """
+    return render_template("index.html")
+
+
+def rows_to_list(rows):
+    """Convert a list of SQLite Row objects into a list of plain dicts.
+
+    Flask's jsonify() can't handle SQLite Row objects directly — it needs
+    plain Python dicts. dict(row) converts each row into one.
+    """
+    return [dict(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Accounts
+# ---------------------------------------------------------------------------
+
+@app.route("/api/accounts")
+def get_accounts():
+    """Return all accounts as JSON.
+
+    SQL: SELECT * FROM accounts
+    Plain English: Grab every row from the accounts table.
+    """
+    conn = get_connection()
+    # fetchall() runs the query and returns every matching row as a list.
+    rows = conn.execute("SELECT * FROM accounts").fetchall()
+    conn.close()
+    return jsonify(rows_to_list(rows))
+
+
+# ---------------------------------------------------------------------------
+# Categories
+# ---------------------------------------------------------------------------
+
+@app.route("/api/categories")
+def get_categories():
+    """Return all categories as JSON.
+
+    SQL: SELECT * FROM categories
+    Plain English: Grab every row from the categories table.
+    """
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM categories").fetchall()
+    conn.close()
+    return jsonify(rows_to_list(rows))
+
+
+# ---------------------------------------------------------------------------
+# Transactions
+# ---------------------------------------------------------------------------
+
+@app.route("/api/transactions", methods=["GET"])
+def get_transactions():
+    """Return all transactions as JSON, newest first.
+
+    We JOIN to the categories and accounts tables so the response includes
+    human-readable names (e.g. "Groceries") instead of raw IDs (e.g. 3).
+
+    SQL explained:
+      SELECT t.*, c.name as category_name, c.color as category_color, a.name as account_name
+        - t.* means all columns from transactions
+        - c.name AS category_name renames the category's name column to avoid
+          clashing with other "name" columns
+      FROM transactions t
+        - 't' is a short alias for the transactions table
+      JOIN categories c ON t.category_id = c.id
+        - For each transaction, find the matching row in categories where the IDs match
+      JOIN accounts a ON t.account_id = a.id
+        - Same idea: attach the matching account row
+      ORDER BY t.date DESC
+        - Sort by date, newest first (DESC = descending)
+    """
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT
+            t.*,
+            c.name  AS category_name,
+            c.color AS category_color,
+            a.name  AS account_name
+        FROM transactions t
+        JOIN categories c ON t.category_id = c.id
+        JOIN accounts   a ON t.account_id  = a.id
+        ORDER BY t.date DESC
+    """).fetchall()
+    conn.close()
+    return jsonify(rows_to_list(rows))
+
+
+@app.route("/api/transactions", methods=["POST"])
+def add_transaction():
+    """Add a new transaction. Expects a JSON body with these fields:
+        date, description, amount, category_id, account_id
+
+    Example request body:
+        {
+            "date": "2026-04-09",
+            "description": "Whole Foods",
+            "amount": -54.20,
+            "category_id": 3,
+            "account_id": 1
+        }
+    """
+    data = request.get_json()
+
+    # Basic validation — make sure the required fields are present.
+    required = ["date", "amount", "category_id", "account_id"]
+    for field in required:
+        if field not in data:
+            # Return a 400 Bad Request error if anything is missing.
+            return jsonify({"error": f"Missing field: {field}"}), 400
+
+    conn = get_connection()
+
+    # INSERT INTO adds a new row. The ? placeholders are filled in safely by
+    # SQLite — this prevents a security issue called SQL injection where
+    # malicious input could manipulate the query.
+    cursor = conn.execute("""
+        INSERT INTO transactions (date, description, amount, category_id, account_id)
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        data["date"],
+        data.get("description", ""),  # description is optional
+        data["amount"],
+        data["category_id"],
+        data["account_id"],
+    ))
+    conn.commit()
+
+    # Return the newly created transaction's ID with a 201 Created status code.
+    new_id = cursor.lastrowid
+    conn.close()
+    return jsonify({"id": new_id, "message": "Transaction added."}), 201
+
+
+# ---------------------------------------------------------------------------
+# Summary (for dashboard cards and charts)
+# ---------------------------------------------------------------------------
+
+@app.route("/api/summary")
+def get_summary():
+    """Return totals used by the dashboard: total balance, income, expenses,
+    and a breakdown of spending by category.
+
+    This is the most complex query — broken down below.
+    """
+    conn = get_connection()
+
+    # --- Total balance across all accounts ---
+    # SUM(balance) adds up all the balance values in the accounts table.
+    row = conn.execute("SELECT SUM(balance) AS total FROM accounts").fetchone()
+    total_balance = row["total"] or 0
+
+    # --- Total income: sum of all positive transaction amounts ---
+    # WHERE amount > 0 filters to only rows where the amount is positive (income).
+    row = conn.execute("""
+        SELECT SUM(amount) AS total
+        FROM transactions
+        WHERE amount > 0
+    """).fetchone()
+    total_income = row["total"] or 0
+
+    # --- Total expenses: sum of all negative transaction amounts ---
+    # ABS() converts a negative number to positive (e.g. -1500 becomes 1500)
+    # so the frontend can display it as a plain positive dollar figure.
+    row = conn.execute("""
+        SELECT ABS(SUM(amount)) AS total
+        FROM transactions
+        WHERE amount < 0
+    """).fetchone()
+    total_expenses = row["total"] or 0
+
+    # --- Spending by category (for the chart) ---
+    # GROUP BY category_id groups all transactions with the same category
+    # together, then SUM(t.amount) totals the amounts within each group.
+    # HAVING filters groups after aggregation — here we only want expense
+    # categories (where the sum is negative).
+    rows = conn.execute("""
+        SELECT
+            c.name          AS category,
+            c.color         AS color,
+            ABS(SUM(t.amount)) AS total
+        FROM transactions t
+        JOIN categories c ON t.category_id = c.id
+        WHERE t.amount < 0
+        GROUP BY t.category_id
+        ORDER BY total DESC
+    """).fetchall()
+    spending_by_category = rows_to_list(rows)
+
+    conn.close()
+
+    return jsonify({
+        "total_balance":        round(total_balance, 2),
+        "total_income":         round(total_income, 2),
+        "total_expenses":       round(total_expenses, 2),
+        "spending_by_category": spending_by_category,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    # Make sure the database and tables exist before the first request comes in.
+    init_db()
+    # debug=True auto-reloads the server when you save changes to the code.
+    # Never use debug=True in production (on Render we'll turn it off).
+    app.run(debug=True)

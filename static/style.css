@@ -1,0 +1,236 @@
+/* ── Design tokens ─────────────────────────────────────────────────────────
+   CSS variables make it easy to keep colors consistent everywhere.
+   Change a value here and it updates across the whole page.
+───────────────────────────────────────────────────────────────────────────── */
+:root {
+    --bg:           #f1f5f9;
+    --surface:      #ffffff;
+    --border:       #e2e8f0;
+    --text:         #0f172a;
+    --muted:        #64748b;
+
+    --indigo:       #6366f1;
+    --indigo-light: #eef2ff;
+    --green:        #10b981;
+    --green-light:  #ecfdf5;
+    --red:          #ef4444;
+    --red-light:    #fef2f2;
+
+    --radius:       12px;
+    --shadow:       0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
+    --shadow-md:    0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
+}
+
+/* ── Reset & base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    box-shadow: var(--shadow);
+}
+
+.header-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: -.02em;
+    color: var(--text);
+}
+
+.logo-icon {
+    width: 22px;
+    height: 22px;
+    color: var(--indigo);
+    flex-shrink: 0;
+}
+
+.header-date {
+    font-size: .8rem;
+    font-weight: 500;
+    color: var(--muted);
+}
+
+/* ── Main layout ─────────────────────────────────────────────────────────── */
+.main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* ── Summary cards ───────────────────────────────────────────────────────── */
+.cards-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+.card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 1.5rem 1.75rem;
+    box-shadow: var(--shadow);
+    border-top: 3px solid transparent;
+    transition: transform .18s ease, box-shadow .18s ease;
+}
+.card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+}
+
+.card--balance  { border-top-color: var(--indigo); }
+.card--income   { border-top-color: var(--green);  }
+.card--expenses { border-top-color: var(--red);    }
+
+.card-label {
+    font-size: .7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    margin-bottom: .5rem;
+}
+
+.card-value {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -.04em;
+    line-height: 1;
+    margin-bottom: .4rem;
+}
+.card--balance  .card-value { color: var(--indigo); }
+.card--income   .card-value { color: var(--green);  }
+.card--expenses .card-value { color: var(--red);    }
+
+.card-sub {
+    font-size: .75rem;
+    color: var(--muted);
+}
+
+/* ── Charts row ──────────────────────────────────────────────────────────── */
+.charts-row {
+    display: grid;
+    grid-template-columns: 5fr 8fr;   /* pie narrower, line wider */
+    gap: 1.5rem;
+}
+
+/* ── Generic panel (charts + table) ─────────────────────────────────────── */
+.panel {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 1.5rem 1.75rem;
+    box-shadow: var(--shadow);
+}
+
+.panel-title {
+    font-size: .82rem;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -.01em;
+    margin-bottom: 1.25rem;
+    padding-bottom: .75rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.chart-wrap {
+    position: relative;
+    height: 260px;
+}
+
+/* ── Transactions table ──────────────────────────────────────────────────── */
+.table-scroll {
+    overflow-x: auto;   /* scrolls sideways on small screens */
+}
+
+.tx-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .855rem;
+}
+
+.tx-table th {
+    padding: .5rem 1rem;
+    text-align: left;
+    font-size: .68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+.tx-table td {
+    padding: .9rem 1rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+.tx-table tbody tr:last-child td { border-bottom: none; }
+.tx-table tbody tr {
+    transition: background .12s;
+}
+.tx-table tbody tr:hover { background: #f8fafc; }
+
+.col-amount { text-align: right; }
+.tx-table td.col-amount { text-align: right; }
+
+/* Amount colour + weight */
+.amount-income  { color: var(--green); font-weight: 600; }
+.amount-expense { color: var(--red);   font-weight: 600; }
+
+/* Category badge: coloured dot + label */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .8rem;
+    font-weight: 500;
+}
+.badge-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.loading {
+    text-align: center;
+    color: var(--muted);
+    padding: 2.5rem 1rem !important;
+    font-size: .875rem;
+}
+
+/* ── Responsive: stack everything on narrow screens ──────────────────────── */
+@media (max-width: 768px) {
+    .main        { padding: 1rem; gap: 1rem; }
+    .cards-row   { grid-template-columns: 1fr; }
+    .charts-row  { grid-template-columns: 1fr; }
+    .card-value  { font-size: 1.6rem; }
+}

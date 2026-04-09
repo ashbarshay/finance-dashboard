@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Finance Dashboard</title>
+
+    <!-- Inter font from Google Fonts — clean, modern, used by many professional apps -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+    <!-- Chart.js from CDN — the library that draws our pie and line charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+    <!-- ── Header ──────────────────────────────────────────────────────── -->
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="7" width="20" height="14" rx="2"/>
+                    <path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/>
+                    <line x1="12" y1="12" x2="12" y2="16"/>
+                    <line x1="10" y1="14" x2="14" y2="14"/>
+                </svg>
+                <span>Finance Dashboard</span>
+            </div>
+            <div id="header-date" class="header-date"></div>
+        </div>
+    </header>
+
+    <!-- ── Main content ────────────────────────────────────────────────── -->
+    <main class="main">
+
+        <!-- Summary cards -->
+        <section class="cards-row">
+            <div class="card card--balance">
+                <p class="card-label">Total Balance</p>
+                <p class="card-value" id="total-balance">—</p>
+                <p class="card-sub">Across all accounts</p>
+            </div>
+            <div class="card card--income">
+                <p class="card-label">Total Income</p>
+                <p class="card-value" id="total-income">—</p>
+                <p class="card-sub">All recorded income</p>
+            </div>
+            <div class="card card--expenses">
+                <p class="card-label">Total Expenses</p>
+                <p class="card-value" id="total-expenses">—</p>
+                <p class="card-sub">All recorded spending</p>
+            </div>
+        </section>
+
+        <!-- Charts row -->
+        <section class="charts-row">
+            <div class="panel">
+                <h2 class="panel-title">Spending by Category</h2>
+                <div class="chart-wrap">
+                    <canvas id="pie-chart"></canvas>
+                </div>
+            </div>
+            <div class="panel">
+                <h2 class="panel-title">Weekly Spending</h2>
+                <div class="chart-wrap">
+                    <canvas id="line-chart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Transactions table -->
+        <section class="panel">
+            <h2 class="panel-title">Recent Transactions</h2>
+            <div class="table-scroll">
+                <table class="tx-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Description</th>
+                            <th>Category</th>
+                            <th>Account</th>
+                            <th class="col-amount">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tx-body">
+                        <tr><td colspan="5" class="loading">Loading transactions…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
