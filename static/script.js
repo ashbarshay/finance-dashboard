@@ -1,3 +1,10 @@
+// ── Chart instances ───────────────────────────────────────────────────────────
+// We keep references to the charts so we can destroy them before re-drawing.
+// Without this, calling loadDashboard() a second time (e.g. after adding a
+// transaction) would throw "Canvas is already in use" from Chart.js.
+let pieChart  = null;
+let lineChart = null;
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
@@ -73,7 +80,9 @@ function renderCards(summary) {
 function renderPieChart(categories) {
     const ctx = document.getElementById("pie-chart").getContext("2d");
 
-    new Chart(ctx, {
+    // Destroy the old chart if it exists before drawing a new one
+    if (pieChart) pieChart.destroy();
+    pieChart = new Chart(ctx, {
         type: "doughnut",
         data: {
             labels:   categories.map(c => c.category),
@@ -148,7 +157,9 @@ function renderLineChart(transactions) {
 
     const ctx = document.getElementById("line-chart").getContext("2d");
 
-    new Chart(ctx, {
+    // Destroy the old chart if it exists before drawing a new one
+    if (lineChart) lineChart.destroy();
+    lineChart = new Chart(ctx, {
         type: "line",
         data: {
             labels,
@@ -231,5 +242,129 @@ function renderTable(transactions) {
     }).join("");
 }
 
+// ── Add Transaction form ──────────────────────────────────────────────────────
+
+/**
+ * Populate the Category and Account <select> dropdowns by fetching from the API.
+ * We run both fetches at the same time with Promise.all so we don't have to
+ * wait for one to finish before starting the other.
+ */
+async function populateFormDropdowns() {
+    const [catRes, accRes] = await Promise.all([
+        fetch("/api/categories"),
+        fetch("/api/accounts"),
+    ]);
+    const categories = await catRes.json();
+    const accounts   = await accRes.json();
+
+    const catSelect = document.getElementById("form-category");
+    const accSelect = document.getElementById("form-account");
+
+    // For each category, create an <option> element and append it to the <select>
+    categories.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value       = c.id;        // the value sent to the API
+        opt.textContent = c.name;      // what the user sees
+        catSelect.appendChild(opt);
+    });
+
+    accounts.forEach(a => {
+        const opt = document.createElement("option");
+        opt.value       = a.id;
+        opt.textContent = a.name;
+        accSelect.appendChild(opt);
+    });
+}
+
+/**
+ * Handle the form submission.
+ * event.preventDefault() stops the browser from doing its default behaviour
+ * (reloading the page), so we can handle the submission ourselves with fetch.
+ */
+async function handleFormSubmit(event) {
+    event.preventDefault();
+
+    const msgEl = document.getElementById("form-message");
+
+    // Read the values out of each form field
+    const date        = document.getElementById("form-date").value;
+    const description = document.getElementById("form-description").value.trim();
+    const amount      = parseFloat(document.getElementById("form-amount").value);
+    const categoryId  = parseInt(document.getElementById("form-category").value);
+    const accountId   = parseInt(document.getElementById("form-account").value);
+
+    // Basic client-side validation before hitting the API.
+    // isNaN() returns true when parseInt/parseFloat couldn't parse the value
+    // (e.g. the user left a dropdown on its placeholder "Select a category").
+    if (!date) {
+        showMessage(msgEl, "Please enter a date.", "error");
+        return;
+    }
+    if (isNaN(amount) || amount === 0) {
+        showMessage(msgEl, "Please enter a non-zero amount.", "error");
+        return;
+    }
+    if (isNaN(categoryId)) {
+        showMessage(msgEl, "Please select a category.", "error");
+        return;
+    }
+    if (isNaN(accountId)) {
+        showMessage(msgEl, "Please select an account.", "error");
+        return;
+    }
+
+    // Send the data to the backend as JSON
+    // JSON.stringify() converts the JS object into a JSON string the API expects
+    const res = await fetch("/api/transactions", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+            date,
+            description,
+            amount,
+            category_id: categoryId,
+            account_id:  accountId,
+        }),
+    });
+
+    if (res.ok) {
+        showMessage(msgEl, "Transaction added!", "success");
+        document.getElementById("add-transaction-form").reset();
+        // Reset the date field back to today after the form resets
+        document.getElementById("form-date").value = todayString();
+        // Reload all dashboard data so the new transaction appears everywhere
+        loadDashboard();
+        // Clear the success message after 3 seconds so it doesn't just sit there
+        setTimeout(() => { msgEl.textContent = ""; msgEl.className = "form-message"; }, 3000);
+    } else {
+        const body = await res.json();
+        showMessage(msgEl, body.error || "Something went wrong.", "error");
+    }
+}
+
+/** Helper: set the message element's text and apply the right colour class. */
+function showMessage(el, text, type) {
+    el.textContent = text;
+    el.className   = `form-message form-message--${type}`;
+}
+
+/** Return today's date as a YYYY-MM-DD string (the format <input type="date"> needs). */
+function todayString() {
+    const now = new Date();
+    const y   = now.getFullYear();
+    const m   = String(now.getMonth() + 1).padStart(2, "0");  // months are 0-indexed
+    const d   = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+}
+
 // ── Kick everything off ───────────────────────────────────────────────────────
+
+// Set the date field to today when the page loads
+document.getElementById("form-date").value = todayString();
+
+// Wire up the form's submit event to our handler function
+document.getElementById("add-transaction-form").addEventListener("submit", handleFormSubmit);
+
+// Populate the dropdowns and load the dashboard data in parallel
+populateFormDropdowns();
 loadDashboard();

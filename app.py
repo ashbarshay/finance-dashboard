@@ -117,11 +117,13 @@ def add_transaction():
     """
     data = request.get_json()
 
-    # Basic validation — make sure the required fields are present.
+    # Basic validation — make sure the required fields are present AND non-null.
+    # We check both conditions because JSON can send a key with a null value
+    # (e.g. {"account_id": null}), which passes a key-existence check but
+    # would write NULL to the database and break the JOIN in the GET query.
     required = ["date", "amount", "category_id", "account_id"]
     for field in required:
-        if field not in data:
-            # Return a 400 Bad Request error if anything is missing.
+        if field not in data or data[field] is None:
             return jsonify({"error": f"Missing field: {field}"}), 400
 
     conn = get_connection()

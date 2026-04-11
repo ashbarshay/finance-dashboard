@@ -227,10 +227,97 @@ body {
     font-size: .875rem;
 }
 
+/* ── Add Transaction form ────────────────────────────────────────────────── */
+
+/* 2-column grid for the form fields */
+.form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem 1.5rem;
+}
+
+/* Each label + input pair */
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+}
+
+/* The submit button and message live in their own cell, aligned to the bottom */
+.form-group--submit {
+    justify-content: flex-end;
+    gap: .75rem;
+}
+
+/* Small uppercase label — matches the transaction table header style */
+.form-label {
+    font-size: .68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--muted);
+}
+
+/* Tiny hint text inline with the label */
+.form-label-hint {
+    font-size: .65rem;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--muted);
+    opacity: .8;
+}
+
+/* Shared styles for text inputs and selects */
+.form-input,
+.form-select {
+    height: 40px;
+    padding: 0 .75rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: .875rem;
+    color: var(--text);
+    background: var(--surface);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+}
+
+.form-input:focus,
+.form-select:focus {
+    border-color: var(--indigo);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, .12);
+}
+
+/* Indigo submit button */
+.btn-primary {
+    height: 40px;
+    padding: 0 1.25rem;
+    background: var(--indigo);
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: .875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, transform .12s;
+    align-self: flex-start;
+}
+
+.btn-primary:hover  { background: #4f46e5; }
+.btn-primary:active { transform: translateY(1px); }
+
+/* Success / error feedback message */
+.form-message { font-size: .82rem; font-weight: 500; min-height: 1.2em; }
+.form-message--success { color: var(--green); }
+.form-message--error   { color: var(--red);   }
+
 /* ── Responsive: stack everything on narrow screens ──────────────────────── */
 @media (max-width: 768px) {
     .main        { padding: 1rem; gap: 1rem; }
     .cards-row   { grid-template-columns: 1fr; }
     .charts-row  { grid-template-columns: 1fr; }
     .card-value  { font-size: 1.6rem; }
+    .form-grid   { grid-template-columns: 1fr; }
 }
