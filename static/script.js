@@ -8,6 +8,21 @@ let lineChart = null;
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
+ * Escape HTML special characters before inserting text into innerHTML.
+ * Without this, a transaction description like <script>alert(1)</script>
+ * would be treated as real HTML by the browser and executed.
+ * After escaping, it becomes &lt;script&gt;... which is displayed as plain
+ * text, not run as code.
+ */
+function escHtml(str) {
+    return String(str ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+
+/**
  * Format a number as US dollars, e.g. 1234.5 → "$1,234.50"
  * Intl.NumberFormat is a built-in browser API for locale-aware formatting.
  */
@@ -229,14 +244,14 @@ function renderTable(transactions) {
         return `
             <tr>
                 <td>${fmtDate(t.date)}</td>
-                <td>${t.description || "—"}</td>
+                <td>${escHtml(t.description) || "—"}</td>
                 <td>
                     <span class="badge">
-                        <span class="badge-dot" style="background:${t.category_color}"></span>
-                        ${t.category_name}
+                        <span class="badge-dot" style="background:${escHtml(t.category_color)}"></span>
+                        ${escHtml(t.category_name)}
                     </span>
                 </td>
-                <td>${t.account_name}</td>
+                <td>${escHtml(t.account_name)}</td>
                 <td class="col-amount ${amtClass}">${amtText}</td>
             </tr>`;
     }).join("");
@@ -313,32 +328,42 @@ async function handleFormSubmit(event) {
         return;
     }
 
-    // Send the data to the backend as JSON
-    // JSON.stringify() converts the JS object into a JSON string the API expects
-    const res = await fetch("/api/transactions", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-            date,
-            description,
-            amount,
-            category_id: categoryId,
-            account_id:  accountId,
-        }),
-    });
+    // Send the data to the backend as JSON.
+    // The try/catch handles network failures (e.g. no internet, server down).
+    // Without it, a dropped connection would throw an uncaught error and the
+    // user would see nothing — no feedback at all.
+    try {
+        // JSON.stringify() converts the JS object into a JSON string the API expects
+        const res = await fetch("/api/transactions", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({
+                date,
+                description,
+                amount,
+                category_id: categoryId,
+                account_id:  accountId,
+            }),
+        });
 
-    if (res.ok) {
-        showMessage(msgEl, "Transaction added!", "success");
-        document.getElementById("add-transaction-form").reset();
-        // Reset the date field back to today after the form resets
-        document.getElementById("form-date").value = todayString();
-        // Reload all dashboard data so the new transaction appears everywhere
-        loadDashboard();
-        // Clear the success message after 3 seconds so it doesn't just sit there
-        setTimeout(() => { msgEl.textContent = ""; msgEl.className = "form-message"; }, 3000);
-    } else {
-        const body = await res.json();
-        showMessage(msgEl, body.error || "Something went wrong.", "error");
+        if (res.ok) {
+            showMessage(msgEl, "Transaction added!", "success");
+            document.getElementById("add-transaction-form").reset();
+            // Reset the date field back to today after the form resets
+            document.getElementById("form-date").value = todayString();
+            // Reload all dashboard data so the new transaction appears everywhere
+            loadDashboard();
+            // Clear the success message after 3 seconds so it doesn't just sit there
+            setTimeout(() => { msgEl.textContent = ""; msgEl.className = "form-message"; }, 3000);
+        } else {
+            const body = await res.json();
+            showMessage(msgEl, body.error || "Something went wrong.", "error");
+        }
+    } catch (err) {
+        // This runs if the network request itself failed (not a server error,
+        // but a connection problem — e.g. the server is unreachable).
+        console.error("Network error submitting transaction:", err);
+        showMessage(msgEl, "Could not reach the server. Check your connection.", "error");
     }
 }
 

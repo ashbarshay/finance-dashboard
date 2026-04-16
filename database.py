@@ -1,8 +1,12 @@
+import os
 import sqlite3
 
-# The name of the database file that SQLite will create on disk.
-# If it doesn't exist yet, SQLite creates it automatically when we connect.
-DB_PATH = "finance.db"
+# Build an absolute path to finance.db in the same directory as this file.
+# Using an absolute path means the database is always found in the right place
+# regardless of which directory Gunicorn (or any other process) is launched from.
+# os.path.dirname(__file__) → the folder this file lives in
+# os.path.join(...)         → glue that folder path together with "finance.db"
+DB_PATH = os.path.join(os.path.dirname(__file__), "finance.db")
 
 
 def get_connection():
@@ -69,7 +73,6 @@ def init_db():
 
     conn.commit()
     conn.close()
-    print("Tables created.")
 
 
 def seed_data():

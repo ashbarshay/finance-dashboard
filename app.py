@@ -5,6 +5,12 @@ from database import get_connection, init_db
 # static files (it uses the directory this file lives in).
 app = Flask(__name__)
 
+# Ensure the database tables exist before the first request is handled.
+# This must run at module level (not inside `if __name__ == "__main__"`) so
+# that it also executes when Gunicorn imports this file — Gunicorn never
+# triggers the __main__ block.
+init_db()
+
 
 @app.route("/")
 def index():
@@ -37,10 +43,14 @@ def get_accounts():
     Plain English: Grab every row from the accounts table.
     """
     conn = get_connection()
-    # fetchall() runs the query and returns every matching row as a list.
-    rows = conn.execute("SELECT * FROM accounts").fetchall()
-    conn.close()
-    return jsonify(rows_to_list(rows))
+    try:
+        # fetchall() runs the query and returns every matching row as a list.
+        rows = conn.execute("SELECT * FROM accounts").fetchall()
+        return jsonify(rows_to_list(rows))
+    finally:
+        # `finally` runs whether the code above succeeded or raised an error,
+        # so the connection is always closed and never left open by accident.
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -55,9 +65,11 @@ def get_categories():
     Plain English: Grab every row from the categories table.
     """
     conn = get_connection()
-    rows = conn.execute("SELECT * FROM categories").fetchall()
-    conn.close()
-    return jsonify(rows_to_list(rows))
+    try:
+        rows = conn.execute("SELECT * FROM categories").fetchall()
+        return jsonify(rows_to_list(rows))
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -86,19 +98,21 @@ def get_transactions():
         - Sort by date, newest first (DESC = descending)
     """
     conn = get_connection()
-    rows = conn.execute("""
-        SELECT
-            t.*,
-            c.name  AS category_name,
-            c.color AS category_color,
-            a.name  AS account_name
-        FROM transactions t
-        JOIN categories c ON t.category_id = c.id
-        JOIN accounts   a ON t.account_id  = a.id
-        ORDER BY t.date DESC
-    """).fetchall()
-    conn.close()
-    return jsonify(rows_to_list(rows))
+    try:
+        rows = conn.execute("""
+            SELECT
+                t.*,
+                c.name  AS category_name,
+                c.color AS category_color,
+                a.name  AS account_name
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            JOIN accounts   a ON t.account_id  = a.id
+            ORDER BY t.date DESC
+        """).fetchall()
+        return jsonify(rows_to_list(rows))
+    finally:
+        conn.close()
 
 
 @app.route("/api/transactions", methods=["POST"])
@@ -117,6 +131,12 @@ def add_transaction():
     """
     data = request.get_json()
 
+    # get_json() returns None if the request body is missing, empty, or not
+    # valid JSON (e.g. the Content-Type header wasn't set to application/json).
+    # Without this check the loop below would crash with a TypeError.
+    if not data:
+        return jsonify({"error": "Request body must be valid JSON."}), 400
+
     # Basic validation — make sure the required fields are present AND non-null.
     # We check both conditions because JSON can send a key with a null value
     # (e.g. {"account_id": null}), which passes a key-existence check but
@@ -127,26 +147,26 @@ def add_transaction():
             return jsonify({"error": f"Missing field: {field}"}), 400
 
     conn = get_connection()
+    try:
+        # INSERT INTO adds a new row. The ? placeholders are filled in safely by
+        # SQLite — this prevents a security issue called SQL injection where
+        # malicious input could manipulate the query.
+        cursor = conn.execute("""
+            INSERT INTO transactions (date, description, amount, category_id, account_id)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            data["date"],
+            data.get("description", ""),  # description is optional
+            data["amount"],
+            data["category_id"],
+            data["account_id"],
+        ))
+        conn.commit()
 
-    # INSERT INTO adds a new row. The ? placeholders are filled in safely by
-    # SQLite — this prevents a security issue called SQL injection where
-    # malicious input could manipulate the query.
-    cursor = conn.execute("""
-        INSERT INTO transactions (date, description, amount, category_id, account_id)
-        VALUES (?, ?, ?, ?, ?)
-    """, (
-        data["date"],
-        data.get("description", ""),  # description is optional
-        data["amount"],
-        data["category_id"],
-        data["account_id"],
-    ))
-    conn.commit()
-
-    # Return the newly created transaction's ID with a 201 Created status code.
-    new_id = cursor.lastrowid
-    conn.close()
-    return jsonify({"id": new_id, "message": "Transaction added."}), 201
+        # Return the newly created transaction's ID with a 201 Created status code.
+        return jsonify({"id": cursor.lastrowid, "message": "Transaction added."}), 201
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -161,57 +181,57 @@ def get_summary():
     This is the most complex query — broken down below.
     """
     conn = get_connection()
+    try:
+        # --- Total balance across all accounts ---
+        # SUM(balance) adds up all the balance values in the accounts table.
+        row = conn.execute("SELECT SUM(balance) AS total FROM accounts").fetchone()
+        total_balance = row["total"] or 0
 
-    # --- Total balance across all accounts ---
-    # SUM(balance) adds up all the balance values in the accounts table.
-    row = conn.execute("SELECT SUM(balance) AS total FROM accounts").fetchone()
-    total_balance = row["total"] or 0
+        # --- Total income: sum of all positive transaction amounts ---
+        # WHERE amount > 0 filters to only rows where the amount is positive (income).
+        row = conn.execute("""
+            SELECT SUM(amount) AS total
+            FROM transactions
+            WHERE amount > 0
+        """).fetchone()
+        total_income = row["total"] or 0
 
-    # --- Total income: sum of all positive transaction amounts ---
-    # WHERE amount > 0 filters to only rows where the amount is positive (income).
-    row = conn.execute("""
-        SELECT SUM(amount) AS total
-        FROM transactions
-        WHERE amount > 0
-    """).fetchone()
-    total_income = row["total"] or 0
+        # --- Total expenses: sum of all negative transaction amounts ---
+        # ABS() converts a negative number to positive (e.g. -1500 becomes 1500)
+        # so the frontend can display it as a plain positive dollar figure.
+        row = conn.execute("""
+            SELECT ABS(SUM(amount)) AS total
+            FROM transactions
+            WHERE amount < 0
+        """).fetchone()
+        total_expenses = row["total"] or 0
 
-    # --- Total expenses: sum of all negative transaction amounts ---
-    # ABS() converts a negative number to positive (e.g. -1500 becomes 1500)
-    # so the frontend can display it as a plain positive dollar figure.
-    row = conn.execute("""
-        SELECT ABS(SUM(amount)) AS total
-        FROM transactions
-        WHERE amount < 0
-    """).fetchone()
-    total_expenses = row["total"] or 0
+        # --- Spending by category (for the chart) ---
+        # GROUP BY category_id groups all transactions with the same category
+        # together, then SUM(t.amount) totals the amounts within each group.
+        # HAVING filters groups after aggregation — here we only want expense
+        # categories (where the sum is negative).
+        rows = conn.execute("""
+            SELECT
+                c.name          AS category,
+                c.color         AS color,
+                ABS(SUM(t.amount)) AS total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.amount < 0
+            GROUP BY t.category_id
+            ORDER BY total DESC
+        """).fetchall()
+        spending_by_category = rows_to_list(rows)
 
-    # --- Spending by category (for the chart) ---
-    # GROUP BY category_id groups all transactions with the same category
-    # together, then SUM(t.amount) totals the amounts within each group.
-    # HAVING filters groups after aggregation — here we only want expense
-    # categories (where the sum is negative).
-    rows = conn.execute("""
-        SELECT
-            c.name          AS category,
-            c.color         AS color,
-            ABS(SUM(t.amount)) AS total
-        FROM transactions t
-        JOIN categories c ON t.category_id = c.id
-        WHERE t.amount < 0
-        GROUP BY t.category_id
-        ORDER BY total DESC
-    """).fetchall()
-    spending_by_category = rows_to_list(rows)
-
-    conn.close()
-
-    return jsonify({
-        "total_balance":        round(total_balance, 2),
-        "total_income":         round(total_income, 2),
-        "total_expenses":       round(total_expenses, 2),
-        "spending_by_category": spending_by_category,
-    })
+        return jsonify({
+            "total_balance":        round(total_balance, 2),
+            "total_income":         round(total_income, 2),
+            "total_expenses":       round(total_expenses, 2),
+            "spending_by_category": spending_by_category,
+        })
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -219,8 +239,6 @@ def get_summary():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Make sure the database and tables exist before the first request comes in.
-    init_db()
     # debug=True auto-reloads the server when you save changes to the code.
     # Never use debug=True in production (on Render we'll turn it off).
     app.run(debug=True)
