@@ -2,8 +2,10 @@
 // We keep references to the charts so we can destroy them before re-drawing.
 // Without this, calling loadDashboard() a second time (e.g. after adding a
 // transaction) would throw "Canvas is already in use" from Chart.js.
-let pieChart  = null;
-let lineChart = null;
+let pieChart      = null;
+let spendingChart = null;            // holds either the bar or line chart
+let spendingMode  = "monthly";       // "monthly" or "weekly"
+let cachedTransactions = null;       // saved so the toggle can re-render without a new fetch
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -71,10 +73,12 @@ async function loadDashboard() {
         const summary      = await summaryRes.json();
         const transactions = await txRes.json();
 
+        cachedTransactions = transactions;
         renderCards(summary);
         renderPieChart(summary.spending_by_category);
-        renderLineChart(transactions);
-        renderTable(transactions.slice(0, 20));
+        renderSpendingChart(transactions);
+        renderFilteredTable();
+        renderBudget(transactions);
     } catch (err) {
         console.error("Failed to load dashboard data:", err);
         document.getElementById("tx-body").innerHTML =
@@ -88,6 +92,17 @@ function renderCards(summary) {
     document.getElementById("total-balance").textContent  = fmt(summary.total_balance);
     document.getElementById("total-income").textContent   = fmt(summary.total_income);
     document.getElementById("total-expenses").textContent = fmt(summary.total_expenses);
+
+    // Top spending category — spending_by_category is already sorted by total DESC
+    if (summary.spending_by_category && summary.spending_by_category.length > 0) {
+        const top = summary.spending_by_category[0];
+        const pct = summary.total_expenses > 0
+            ? Math.round(top.total / summary.total_expenses * 100)
+            : 0;
+        document.getElementById("top-cat-name").textContent   = top.category;
+        document.getElementById("top-cat-amount").textContent = fmt(top.total);
+        document.getElementById("top-cat-pct").textContent    = `${pct}% of spending`;
+    }
 }
 
 // ── Pie / doughnut chart ──────────────────────────────────────────────────────
@@ -95,10 +110,70 @@ function renderCards(summary) {
 function renderPieChart(categories) {
     const ctx = document.getElementById("pie-chart").getContext("2d");
 
-    // Destroy the old chart if it exists before drawing a new one
     if (pieChart) pieChart.destroy();
+
+    const grandTotal = categories.reduce((sum, c) => sum + c.total, 0);
+
+    // ── Callout label plugin ──────────────────────────────────────────────────
+    // This is a custom Chart.js plugin. Chart.js calls afterDraw() once the
+    // arcs have been painted, giving us a chance to draw on top of the canvas.
+    // We use it to draw the leader line + "Category XX%" text for each slice.
+    const calloutPlugin = {
+        id: "calloutLabels",
+        afterDraw(chart) {
+            const { ctx: c, data } = chart;
+            const meta  = chart.getDatasetMeta(0);
+            const total = data.datasets[0].data.reduce((a, b) => a + b, 0);
+
+            c.save();
+            meta.data.forEach((arc, i) => {
+                const value    = data.datasets[0].data[i];
+                const label    = data.labels[i];
+                const pct      = Math.round(value / total * 100);
+                if (pct < 8) return;   // small slices: skip callout — legend + tooltip cover them
+
+                // midAngle is the angle (in radians) pointing to the middle of this slice
+                const midAngle = (arc.startAngle + arc.endAngle) / 2;
+                const cx = arc.x;
+                const cy = arc.y;
+                const outerR = arc.outerRadius;
+
+                // x1,y1 — point on the outer edge of the arc
+                const x1 = cx + outerR * Math.cos(midAngle);
+                const y1 = cy + outerR * Math.sin(midAngle);
+                // x2,y2 — the "elbow" 18px further out along the same angle
+                const x2 = cx + (outerR + 18) * Math.cos(midAngle);
+                const y2 = cy + (outerR + 18) * Math.sin(midAngle);
+                // Always pull the horizontal tail to the LEFT so labels never
+                // drift into the right-side legend area.
+                // Right-side slices (isRight): arm exits the arc rightward, tail
+                // reverses left by 28px — label lands in the center-right of the chart.
+                // Left-side slices: arm and tail both go left as before.
+                const isRight = x2 > cx;
+                const x3 = x2 - (isRight ? 28 : 18);
+                const y3 = y2;
+
+                c.beginPath();
+                c.moveTo(x1, y1);
+                c.lineTo(x2, y2);
+                c.lineTo(x3, y3);
+                c.strokeStyle = arc.options.backgroundColor;
+                c.lineWidth   = 1.5;
+                c.stroke();
+
+                c.font         = "bold 11px Inter, system-ui, sans-serif";
+                c.fillStyle    = "#374151";
+                c.textAlign    = "right";   // label always to the left of x3
+                c.textBaseline = "middle";
+                c.fillText(`${label} ${pct}%`, x3 - 4, y3);
+            });
+            c.restore();
+        },
+    };
+
     pieChart = new Chart(ctx, {
-        type: "doughnut",
+        type:    "doughnut",
+        plugins: [calloutPlugin],
         data: {
             labels:   categories.map(c => c.category),
             datasets: [{
@@ -112,21 +187,27 @@ function renderPieChart(categories) {
         options: {
             responsive:          true,
             maintainAspectRatio: false,
-            cutout:              "60%",          // makes it a doughnut vs solid pie
+            cutout:              "60%",
+            // Extra padding gives the callout labels room outside the arc
+            layout: { padding: { top: 20, bottom: 20, left: 65, right: 30 } },
             plugins: {
                 legend: {
                     position: "right",
                     labels: {
-                        font:            { family: "Inter", size: 12 },
-                        padding:         14,
+                        font:            { family: "Inter", size: 11 },
+                        padding:         8,
                         usePointStyle:   true,
                         pointStyleWidth: 8,
+                        boxHeight:       10,
                     },
                 },
                 tooltip: {
                     callbacks: {
-                        // Show the dollar amount in the tooltip pop-up
-                        label: ctx => `  ${ctx.label}:  ${fmt(ctx.raw)}`,
+                        // Show both dollar amount AND percentage on hover
+                        label: ctx => {
+                            const pct = Math.round(ctx.raw / grandTotal * 100);
+                            return `  ${ctx.label}:  ${fmt(ctx.raw)}  (${pct}%)`;
+                        },
                     },
                 },
             },
@@ -134,33 +215,115 @@ function renderPieChart(categories) {
     });
 }
 
-// ── Line chart ────────────────────────────────────────────────────────────────
+// ── Spending chart — dispatcher + both views ──────────────────────────────────
+
+// One distinct color per bar — cycles if there are more than 12 months
+const BAR_COLORS = [
+    "#6366f1", "#f59e0b", "#10b981", "#ef4444",
+    "#3b82f6", "#8b5cf6", "#f97316", "#14b8a6",
+    "#ec4899", "#84cc16", "#06b6d4", "#a855f7",
+];
+
+// Shared scale/tooltip config used by both bar and line charts
+function spendingScales() {
+    return {
+        y: {
+            beginAtZero: true,
+            grid:   { color: "#f1f5f9" },
+            border: { dash: [4, 4] },
+            ticks: {
+                font:     { family: "Inter", size: 11 },
+                color:    "#94a3b8",
+                callback: v => "$" + v.toLocaleString(),
+            },
+        },
+        x: {
+            grid:  { display: false },
+            ticks: { font: { family: "Inter", size: 11 }, color: "#94a3b8" },
+        },
+    };
+}
 
 /**
- * Group expense transactions by the Sunday that starts their week.
- * This gives us ~8 weekly data points for our 2-month date range —
- * clean enough to show a meaningful trend without being noisy.
+ * Dispatcher: decide which chart type to draw based on spendingMode.
+ * This is the single function that loadDashboard() and the toggle buttons call.
  */
-function renderLineChart(transactions) {
-    // 1. Filter to expenses only (negative amounts)
+function renderSpendingChart(transactions) {
+    if (spendingMode === "monthly") {
+        renderBarChart(transactions);
+    } else {
+        renderWeeklyChart(transactions);
+    }
+}
+
+/**
+ * Monthly view — one bar per calendar month, each a different color.
+ */
+function renderBarChart(transactions) {
     const expenses = transactions.filter(t => t.amount < 0);
 
-    // 2. Build a map: { "2026-02-01": 245.67, ... }
+    // Group by "YYYY-MM" key, e.g. "2026-03"
+    const monthTotals = {};
+    expenses.forEach(t => {
+        const key = t.date.slice(0, 7);
+        monthTotals[key] = (monthTotals[key] || 0) + Math.abs(t.amount);
+    });
+
+    const months = Object.keys(monthTotals).sort();
+    const labels = months.map(m => {
+        const [y, mo] = m.split("-").map(Number);
+        return new Date(y, mo - 1, 1).toLocaleDateString("en-US", {
+            month: "short", year: "numeric",
+        });
+    });
+    const values = months.map(m => Math.round(monthTotals[m] * 100) / 100);
+    const colors = months.map((_, i) => BAR_COLORS[i % BAR_COLORS.length]);
+
+    const ctx = document.getElementById("spending-chart").getContext("2d");
+    if (spendingChart) spendingChart.destroy();
+    spendingChart = new Chart(ctx, {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [{
+                label:           "Monthly Spending",
+                data:            values,
+                backgroundColor: colors,
+                borderRadius:    6,
+                borderSkipped:   false,
+            }],
+        },
+        options: {
+            responsive:          true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => `  Spent: ${fmt(ctx.raw)}` } },
+            },
+            scales: spendingScales(),
+        },
+    });
+}
+
+/**
+ * Weekly view — a line chart grouping expenses by the Sunday of each week.
+ * This gives a more granular view of how spending is distributed across weeks.
+ */
+function renderWeeklyChart(transactions) {
+    const expenses = transactions.filter(t => t.amount < 0);
+
+    // Group by the Sunday that starts each week
     const weekTotals = {};
     expenses.forEach(t => {
         const [y, m, d] = t.date.split("-").map(Number);
-        const date = new Date(y, m - 1, d);
-
-        // Find the Sunday of this date's week
+        const date   = new Date(y, m - 1, d);
         const sunday = new Date(date);
         sunday.setDate(date.getDate() - date.getDay());
-
-        // Format as YYYY-MM-DD for a sortable string key
+        // toISOString() gives UTC, which is fine here — we only need a sortable key
         const key = sunday.toISOString().split("T")[0];
         weekTotals[key] = (weekTotals[key] || 0) + Math.abs(t.amount);
     });
 
-    // 3. Sort weeks chronologically and build chart arrays
     const weeks  = Object.keys(weekTotals).sort();
     const labels = weeks.map(w => {
         const [y, m, d] = w.split("-").map(Number);
@@ -170,56 +333,35 @@ function renderLineChart(transactions) {
     });
     const values = weeks.map(w => Math.round(weekTotals[w] * 100) / 100);
 
-    const ctx = document.getElementById("line-chart").getContext("2d");
-
-    // Destroy the old chart if it exists before drawing a new one
-    if (lineChart) lineChart.destroy();
-    lineChart = new Chart(ctx, {
+    const ctx = document.getElementById("spending-chart").getContext("2d");
+    if (spendingChart) spendingChart.destroy();
+    spendingChart = new Chart(ctx, {
         type: "line",
         data: {
             labels,
             datasets: [{
-                label:           "Weekly Spending",
-                data:            values,
-                borderColor:     "#6366f1",
-                backgroundColor: "rgba(99, 102, 241, 0.08)",
-                borderWidth:     2.5,
+                label:                "Weekly Spending",
+                data:                 values,
+                borderColor:          "#6366f1",
+                backgroundColor:      "rgba(99, 102, 241, 0.08)",
+                borderWidth:          2.5,
                 pointBackgroundColor: "#6366f1",
                 pointBorderColor:     "#ffffff",
                 pointBorderWidth:     2,
-                pointRadius:     5,
-                pointHoverRadius: 7,
-                fill:            true,
-                tension:         0.35,   // slight curve on the line
+                pointRadius:          5,
+                pointHoverRadius:     7,
+                fill:                 true,
+                tension:              0.35,
             }],
         },
         options: {
             responsive:          true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: false },  // label is obvious — hide the legend
-                tooltip: {
-                    callbacks: {
-                        label: ctx => `  Spent: ${fmt(ctx.raw)}`,
-                    },
-                },
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => `  Spent: ${fmt(ctx.raw)}` } },
             },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    grid:  { color: "#f1f5f9" },
-                    border: { dash: [4, 4] },
-                    ticks: {
-                        font:     { family: "Inter", size: 11 },
-                        color:    "#94a3b8",
-                        callback: v => "$" + v.toLocaleString(),
-                    },
-                },
-                x: {
-                    grid:  { display: false },
-                    ticks: { font: { family: "Inter", size: 11 }, color: "#94a3b8" },
-                },
-            },
+            scales: spendingScales(),
         },
     });
 }
@@ -275,12 +417,19 @@ async function populateFormDropdowns() {
     const catSelect = document.getElementById("form-category");
     const accSelect = document.getElementById("form-account");
 
-    // For each category, create an <option> element and append it to the <select>
+    // Populate both the form category select AND the filter category select
+    const filterCatSelect = document.getElementById("filter-category");
     categories.forEach(c => {
         const opt = document.createElement("option");
-        opt.value       = c.id;        // the value sent to the API
-        opt.textContent = c.name;      // what the user sees
+        opt.value       = c.id;
+        opt.textContent = c.name;
         catSelect.appendChild(opt);
+
+        // Clone the same option into the filter dropdown
+        const filterOpt = document.createElement("option");
+        filterOpt.value       = c.id;
+        filterOpt.textContent = c.name;
+        filterCatSelect.appendChild(filterOpt);
     });
 
     accounts.forEach(a => {
@@ -389,6 +538,116 @@ document.getElementById("form-date").value = todayString();
 
 // Wire up the form's submit event to our handler function
 document.getElementById("add-transaction-form").addEventListener("submit", handleFormSubmit);
+
+// ── Transaction filter ────────────────────────────────────────────────────────
+
+/**
+ * Read the current filter inputs and re-render the table.
+ * When no filters are active, shows the top 20 rows (same as the default).
+ * When any filter is active, shows all matching rows so nothing is hidden.
+ * Date comparison uses simple string ordering — this works because both the
+ * stored dates and the input values are in YYYY-MM-DD format, which sorts
+ * correctly as a string (e.g. "2026-03-01" < "2026-04-15").
+ */
+function renderFilteredTable() {
+    if (!cachedTransactions) return;
+    const catId = parseInt(document.getElementById("filter-category").value) || null;
+    const start = document.getElementById("filter-date-start").value;
+    const end   = document.getElementById("filter-date-end").value;
+    const isFiltered = catId || start || end;
+
+    const rows = cachedTransactions.filter(t => {
+        if (catId && t.category_id !== catId) return false;
+        if (start && t.date < start)          return false;
+        if (end   && t.date > end)            return false;
+        return true;
+    });
+    renderTable(isFiltered ? rows : rows.slice(0, 20));
+}
+
+// ── Monthly budget ────────────────────────────────────────────────────────────
+
+/**
+ * Calculate how much was spent in the current calendar month, then compare
+ * that to the saved budget and render the progress bar.
+ * The budget is stored in localStorage so it persists across page refreshes
+ * without needing a database column.
+ */
+function renderBudget(transactions) {
+    const budget  = parseFloat(localStorage.getItem("monthlyBudget"));
+    const display = document.getElementById("budget-display");
+    const input   = document.getElementById("budget-input");
+
+    if (!budget || budget <= 0) {
+        display.hidden = true;
+        return;
+    }
+
+    // Pre-fill the input with the saved value so the user can see it on load
+    input.value = budget;
+
+    // Filter to expenses in the current month (e.g. "2026-04")
+    const thisMonth = todayString().slice(0, 7);
+    const spent = transactions
+        .filter(t => t.amount < 0 && t.date.slice(0, 7) === thisMonth)
+        .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+    const pct  = Math.round(spent / budget * 100);
+    const fill = document.getElementById("budget-bar-fill");
+
+    document.getElementById("budget-text").textContent =
+        `${fmt(spent)} of ${fmt(budget)} spent this month — ${pct}%`;
+
+    // Cap the bar width at 100% so it doesn't overflow, but keep the text showing real %
+    fill.style.width = Math.min(pct, 100) + "%";
+    fill.classList.toggle("budget-bar-fill--danger", pct >= 80);
+
+    display.hidden = false;
+}
+
+// ── Spending chart toggle ─────────────────────────────────────────────────────
+
+// Helper: set one button active and the other inactive
+function setToggleActive(activeId, inactiveId) {
+    document.getElementById(activeId).classList.add("toggle-btn--active");
+    document.getElementById(inactiveId).classList.remove("toggle-btn--active");
+}
+
+document.getElementById("btn-monthly").addEventListener("click", () => {
+    spendingMode = "monthly";
+    setToggleActive("btn-monthly", "btn-weekly");
+    // Re-render immediately using the already-fetched data — no API call needed
+    if (cachedTransactions) renderSpendingChart(cachedTransactions);
+});
+
+document.getElementById("btn-weekly").addEventListener("click", () => {
+    spendingMode = "weekly";
+    setToggleActive("btn-weekly", "btn-monthly");
+    if (cachedTransactions) renderSpendingChart(cachedTransactions);
+});
+
+// ── Filter event listeners ────────────────────────────────────────────────────
+
+document.getElementById("filter-category").addEventListener("change", renderFilteredTable);
+document.getElementById("filter-date-start").addEventListener("change", renderFilteredTable);
+document.getElementById("filter-date-end").addEventListener("change", renderFilteredTable);
+
+document.getElementById("filter-clear").addEventListener("click", () => {
+    document.getElementById("filter-category").value   = "";
+    document.getElementById("filter-date-start").value = "";
+    document.getElementById("filter-date-end").value   = "";
+    renderFilteredTable();
+});
+
+// ── Budget save ───────────────────────────────────────────────────────────────
+
+document.getElementById("budget-save").addEventListener("click", () => {
+    const val = parseFloat(document.getElementById("budget-input").value);
+    if (!isNaN(val) && val > 0) {
+        localStorage.setItem("monthlyBudget", val);
+        if (cachedTransactions) renderBudget(cachedTransactions);
+    }
+});
 
 // Populate the dropdowns and load the dashboard data in parallel
 populateFormDropdowns();

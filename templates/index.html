@@ -9,8 +9,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-    <!-- Chart.js from CDN — the library that draws our pie and line charts -->
+    <!-- Chart.js from CDN — the library that draws our pie and bar charts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- chartjs-plugin-datalabels — adds visible text labels on chart slices/bars -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 
     <link rel="stylesheet" href="/static/style.css" />
 </head>
@@ -52,20 +54,48 @@
                 <p class="card-value" id="total-expenses">—</p>
                 <p class="card-sub">All recorded spending</p>
             </div>
+            <div class="card card--top-cat">
+                <p class="card-label">Top Category</p>
+                <p class="card-value" id="top-cat-name">—</p>
+                <p class="card-sub" id="top-cat-amount">—</p>
+                <p class="card-sub" id="top-cat-pct">—</p>
+            </div>
+        </section>
+
+        <!-- Monthly budget tracker -->
+        <section class="budget-section panel">
+            <div class="budget-input-row">
+                <label class="form-label" for="budget-input">Monthly Budget</label>
+                <input class="form-input" type="number" id="budget-input"
+                       min="0" step="50" placeholder="e.g. 3000" />
+                <button class="btn-primary" id="budget-save">Set</button>
+            </div>
+            <div id="budget-display" class="budget-display" hidden>
+                <p class="budget-text" id="budget-text"></p>
+                <div class="budget-bar">
+                    <div class="budget-bar-fill" id="budget-bar-fill"></div>
+                </div>
+            </div>
         </section>
 
         <!-- Charts row -->
         <section class="charts-row">
-            <div class="panel">
+            <div class="panel panel--pie">
                 <h2 class="panel-title">Spending by Category</h2>
                 <div class="chart-wrap">
                     <canvas id="pie-chart"></canvas>
                 </div>
             </div>
             <div class="panel">
-                <h2 class="panel-title">Weekly Spending</h2>
+                <div class="panel-header">
+                    <h2 class="panel-title">Spending Trends</h2>
+                    <div class="toggle-group">
+                        <button class="toggle-btn toggle-btn--active" id="btn-monthly">Monthly</button>
+                        <button class="toggle-btn" id="btn-weekly">Weekly</button>
+                    </div>
+                </div>
                 <div class="chart-wrap">
-                    <canvas id="line-chart"></canvas>
+                    <canvas id="spending-chart"></canvas>
                 </div>
             </div>
         </section>
@@ -122,6 +152,16 @@
         <!-- Transactions table -->
         <section class="panel">
             <h2 class="panel-title">Recent Transactions</h2>
+            <div class="filter-bar">
+                <select class="form-select filter-select" id="filter-category">
+                    <option value="">All categories</option>
+                </select>
+                <input class="form-input" type="date" id="filter-date-start"
+                       title="From date" />
+                <input class="form-input" type="date" id="filter-date-end"
+                       title="To date" />
+                <button class="btn-secondary" id="filter-clear">Clear</button>
+            </div>
             <div class="table-scroll">
                 <table class="tx-table">
                     <thead>
