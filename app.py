@@ -1,15 +1,18 @@
 from flask import Flask, jsonify, request, render_template
-from database import get_connection, init_db
+from database import get_connection, init_db, seed_data
 
 # Create the Flask app. __name__ tells Flask where to look for templates and
 # static files (it uses the directory this file lives in).
 app = Flask(__name__)
 
-# Ensure the database tables exist before the first request is handled.
-# This must run at module level (not inside `if __name__ == "__main__"`) so
-# that it also executes when Gunicorn imports this file — Gunicorn never
-# triggers the __main__ block.
+# Ensure the database tables exist and demo data is loaded before the first
+# request is handled. Both functions are safe to call on every startup:
+# init_db() uses CREATE TABLE IF NOT EXISTS (skips if tables already exist),
+# and seed_data() checks whether rows already exist before inserting.
+# Running at module level (not inside __main__) means this also executes
+# when Gunicorn imports the file — Gunicorn never triggers the __main__ block.
 init_db()
+seed_data()
 
 
 @app.route("/")
