@@ -1,14 +1,12 @@
 # Finance Dashboard
 
-A full-stack personal finance web app built with Python, Flask, and plain JavaScript. It lets you track transactions across multiple accounts, visualize spending by category, and see weekly expense trends — all from a clean, single-page dashboard.
-
-Built as a learning project while exploring full-stack development with the help of Claude Code.
+**[🚀 Live Demo → finance-dashboard-f7df.onrender.com](https://finance-dashboard-f7df.onrender.com/)**
 
 ---
 
-## Screenshot
+A full-stack personal finance web app built with Python, Flask, and plain JavaScript. It lets you track transactions across multiple accounts, visualize spending by category, and see weekly expense trends — all from a clean, single-page dashboard.
 
-> _Screenshot coming soon — [live demo link will go here once deployed to Render]_
+Built as a learning project while exploring full-stack development with the help of Claude Code.
 
 ---
 
@@ -105,11 +103,11 @@ This was my first full-stack project. Some of the things that clicked while buil
 
 ## Future Improvements
 
-- [ ] **Date filtering** — filter the transaction table and charts by month or custom date range
+- [x] **Date filtering** — filter the transaction table by category and custom date range
+- [x] **Budget tracker** — set a monthly budget and track progress with a color-coded progress bar
 - [ ] **Delete / edit transactions** — currently you can only add, not modify existing records
 - [ ] **Account management** — a UI to add and update accounts instead of only via the seed script
 - [ ] **Persistent storage on Render** — swap SQLite for PostgreSQL so data survives redeployments
-- [ ] **Budget goals** — set a monthly budget per category and track progress against it
 - [ ] **CSV import** — paste in a bank export and have it parsed into transactions automatically
 - [ ] **Authentication** — a login screen so the app can be shared without exposing your data
 
