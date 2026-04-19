@@ -1,3 +1,4 @@
+# Database setup - Finance Dashboard
 import os
 import sqlite3
 

@@ -1,3 +1,4 @@
+# Finance Dashboard - Built with Claude Code
 from flask import Flask, jsonify, request, render_template
 from database import get_connection, init_db, seed_data
 
@@ -22,7 +23,10 @@ def index():
     render_template() looks in the templates/ folder and returns the file
     as an HTTP response. The browser receives it and displays the page.
     """
-    return render_template("index.html")
+    try:
+        return render_template("index.html")
+    except Exception as e:
+        return jsonify({"error": "Could not load the dashboard page.", "details": str(e)}), 500
 
 
 def rows_to_list(rows):
