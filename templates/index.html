@@ -78,6 +78,27 @@
             </div>
         </section>
 
+        <!-- AI Insights -->
+        <section class="panel insights-panel">
+            <div class="insights-header">
+                <div>
+                    <h2 class="panel-title">AI Insights</h2>
+                </div>
+                <button class="btn-primary" id="btn-get-insights">Get AI Insights</button>
+            </div>
+            <div id="insights-content" hidden>
+                <!-- Loading spinner — visible while waiting for the API response -->
+                <div id="insights-spinner" class="insights-spinner" hidden>
+                    <div class="spinner"></div>
+                    <p class="insights-loading-text">Analyzing your finances…</p>
+                </div>
+                <!-- The list of insights, populated by script.js -->
+                <ul id="insights-list" class="insights-list" hidden></ul>
+                <!-- Error message if the API call fails -->
+                <p id="insights-error" class="insights-error" hidden></p>
+            </div>
+        </section>
+
         <!-- Charts row -->
         <section class="charts-row">
             <div class="panel panel--pie">

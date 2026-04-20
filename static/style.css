@@ -424,6 +424,97 @@ body {
 }
 .budget-bar-fill--danger { background: var(--red); }
 
+/* ── AI Insights panel ───────────────────────────────────────────────────── */
+
+/* The header row: title on the left, button on the right */
+.insights-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: .75rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0;
+}
+/* Override the default panel-title bottom border/margin since it sits inside
+   insights-header which already provides the bottom border */
+.insights-header .panel-title {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+/* Content area that holds the spinner, list, and error — appears after click */
+#insights-content {
+    margin-top: 1.25rem;
+}
+
+/* Spinner container: centered column */
+.insights-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .75rem;
+    padding: 1.5rem 0;
+}
+
+/* The spinning circle — a border trick:
+   Three sides are transparent, one side is indigo.
+   Rotating it continuously creates the illusion of a spinner. */
+.spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--indigo);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.insights-loading-text {
+    font-size: .875rem;
+    color: var(--muted);
+}
+
+/* The list of insight items */
+.insights-list {
+    list-style: none;   /* remove default bullet points */
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+}
+
+/* Each individual insight — left coloured bar, icon, and text side by side */
+.insights-item {
+    padding: .85rem 1rem .85rem 1.1rem;
+    border-left: 3px solid var(--border);
+    border-radius: 0 8px 8px 0;
+    font-size: .9rem;
+    line-height: 1.55;
+    color: var(--text);
+    display: flex;
+    align-items: flex-start;
+    gap: .6rem;
+}
+
+/* Colour the border and background based on insight type */
+.insights-item--warning  { border-left-color: var(--amber);  background: var(--amber-light);  }
+.insights-item--tip      { border-left-color: var(--indigo); background: var(--indigo-light); }
+.insights-item--positive { border-left-color: var(--green);  background: var(--green-light);  }
+
+.insights-icon { font-size: 1rem; flex-shrink: 0; margin-top: .15rem; }
+
+/* Error message when the API call fails */
+.insights-error {
+    font-size: .875rem;
+    color: var(--red);
+    padding: .75rem 1rem;
+    background: var(--red-light);
+    border-radius: 8px;
+}
+
 /* ── Responsive: stack everything on narrow screens ──────────────────────── */
 @media (max-width: 768px) {
     .main        { padding: 1rem; gap: 1rem; }

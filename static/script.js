@@ -649,6 +649,64 @@ document.getElementById("budget-save").addEventListener("click", () => {
     }
 });
 
+// ── AI Insights ───────────────────────────────────────────────────────────────
+
+/**
+ * Call GET /api/insights, show a loading spinner while waiting, then display
+ * the returned insights as a list — or an error message if something goes wrong.
+ *
+ * fetch() is asynchronous: it returns a "promise" that resolves when the server
+ * responds. The `await` keyword pauses this function until the promise resolves,
+ * without blocking the rest of the page.
+ */
+async function fetchInsights() {
+    const btn     = document.getElementById("btn-get-insights");
+    const content = document.getElementById("insights-content");
+    const spinner = document.getElementById("insights-spinner");
+    const list    = document.getElementById("insights-list");
+    const errEl   = document.getElementById("insights-error");
+
+    // Show the section, display only the spinner; hide old results and errors
+    content.hidden  = false;
+    spinner.hidden  = false;
+    list.hidden     = true;
+    errEl.hidden    = true;
+    btn.disabled    = true;
+    btn.textContent = "Analyzing…";
+
+    try {
+        const res  = await fetch("/api/insights");
+        const data = await res.json();
+
+        // res.ok is true for HTTP 200-299. If the server returned an error (e.g.
+        // missing API key), res.ok is false and data.error has the message.
+        if (!res.ok) throw new Error(data.error || "Something went wrong.");
+
+        // Each insight is {type, text}. Pick an emoji icon per type and apply
+        // a matching CSS class so warning/tip/positive get different colours.
+        const icons = { warning: "⚠️", tip: "💡", positive: "✅" };
+        list.innerHTML = data.insights
+            .map(({ type, text }) =>
+                `<li class="insights-item insights-item--${escHtml(type)}">
+                    <span class="insights-icon">${icons[type] || "💡"}</span>
+                    <span>${escHtml(text)}</span>
+                 </li>`)
+            .join("");
+        list.hidden = false;
+    } catch (err) {
+        errEl.textContent = err.message;
+        errEl.hidden = false;
+    } finally {
+        // `finally` runs whether the try succeeded or the catch ran — so the
+        // button and spinner are always restored no matter what happened.
+        spinner.hidden  = true;
+        btn.disabled    = false;
+        btn.textContent = "Refresh Insights";
+    }
+}
+
+document.getElementById("btn-get-insights").addEventListener("click", fetchInsights);
+
 // Populate the dropdowns and load the dashboard data in parallel
 populateFormDropdowns();
 loadDashboard();

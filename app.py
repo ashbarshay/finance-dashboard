@@ -242,6 +242,230 @@ def get_summary():
 
 
 # ---------------------------------------------------------------------------
+# AI Insights
+# ---------------------------------------------------------------------------
+
+@app.route("/api/insights")
+def get_insights():
+    """Analyse the user's real transaction data and return 4-5 personalised
+    insights as a JSON list of {type, text} objects.
+
+    Each insight has a 'type' of 'warning', 'tip', or 'positive' so the
+    frontend can colour-code them. No external API is needed — all analysis
+    runs in Python against the local database.
+    """
+    from datetime import date
+
+    conn = get_connection()
+    try:
+        # --- All-time income (sum of positive transaction amounts) ---
+        row = conn.execute(
+            "SELECT SUM(amount) AS total FROM transactions WHERE amount > 0"
+        ).fetchone()
+        total_income = row["total"] or 0
+
+        # --- All-time expenses (sum of negative amounts, made positive with ABS) ---
+        row = conn.execute(
+            "SELECT ABS(SUM(amount)) AS total FROM transactions WHERE amount < 0"
+        ).fetchone()
+        total_expenses = row["total"] or 0
+
+        # --- Per-category spending, largest first ---
+        # GROUP BY bundles all rows with the same category together, then
+        # ABS(SUM(amount)) totals how much was spent in that category.
+        rows = conn.execute("""
+            SELECT
+                c.name             AS category,
+                ABS(SUM(t.amount)) AS total
+            FROM transactions t
+            JOIN categories c ON t.category_id = c.id
+            WHERE t.amount < 0
+            GROUP BY t.category_id
+            ORDER BY total DESC
+        """).fetchall()
+        spending_by_category = [dict(r) for r in rows]
+
+        # --- This month's income and expenses ---
+        # date.today().strftime("%Y-%m") gives e.g. "2026-04".
+        # LIKE '2026-04%' matches every date string starting with that prefix —
+        # a simple way to filter to the current month without date functions.
+        this_month = date.today().strftime("%Y-%m")
+        row = conn.execute("""
+            SELECT
+                SUM(CASE WHEN amount > 0 THEN amount      ELSE 0 END)  AS income,
+                ABS(SUM(CASE WHEN amount < 0 THEN amount  ELSE 0 END)) AS expenses
+            FROM transactions
+            WHERE date LIKE ?
+        """, (f"{this_month}%",)).fetchone()
+        month_income   = row["income"]   or 0
+        month_expenses = row["expenses"] or 0
+    finally:
+        conn.close()
+
+    # --- Helper: format a dollar amount with commas, e.g. 1234.5 → "$1,234.50" ---
+    def usd(n):
+        return f"${n:,.2f}"
+
+    # --- Helper: compute a percentage, guarded against divide-by-zero ---
+    def pct(part, whole):
+        return round(part / whole * 100) if whole else 0
+
+    insights = []
+
+    # ── Rule 1: Housing % check (50/30/20 rule says housing ≤ 30%) ──────────
+    # We look for any category whose name contains a housing-related keyword.
+    # next(..., None) returns the first match, or None if there isn't one.
+    housing_keywords = {"housing", "rent", "mortgage"}
+    housing_cat = next(
+        (c for c in spending_by_category
+         if any(kw in c["category"].lower() for kw in housing_keywords)),
+        None,
+    )
+    if housing_cat and total_expenses > 0:
+        h_pct = pct(housing_cat["total"], total_expenses)
+        if h_pct > 30:
+            insights.append({
+                "type": "warning",
+                "text": (
+                    f"Your {housing_cat['category']} spending is {h_pct}% of total expenses — "
+                    f"above the 30% recommended by the 50/30/20 rule. "
+                    f"If possible, look for ways to reduce this over time."
+                ),
+            })
+        else:
+            insights.append({
+                "type": "positive",
+                "text": (
+                    f"Your {housing_cat['category']} spending is {h_pct}% of total expenses — "
+                    f"within the recommended 30% guideline. Well done."
+                ),
+            })
+
+    # ── Rule 2: Top spending category ───────────────────────────────────────
+    if spending_by_category and total_expenses > 0:
+        top = spending_by_category[0]
+        top_pct = pct(top["total"], total_expenses)
+        if top_pct > 40:
+            insights.append({
+                "type": "warning",
+                "text": (
+                    f"Your top category, {top['category']}, makes up {top_pct}% of all spending "
+                    f"({usd(top['total'])}). This concentration limits flexibility — "
+                    f"consider setting a monthly cap."
+                ),
+            })
+        else:
+            insights.append({
+                "type": "tip",
+                "text": (
+                    f"Your biggest expense is {top['category']} at {usd(top['total'])} ({top_pct}%). "
+                    f"This is your highest-leverage category for saving — "
+                    f"small reductions here add up fast."
+                ),
+            })
+
+    # ── Rule 3: This month — income vs expenses ──────────────────────────────
+    if month_income > 0 or month_expenses > 0:
+        if month_expenses > month_income:
+            shortfall = month_expenses - month_income
+            insights.append({
+                "type": "warning",
+                "text": (
+                    f"You've spent {usd(shortfall)} more than you've earned so far this month "
+                    f"({usd(month_expenses)} expenses vs {usd(month_income)} income). "
+                    f"Review discretionary spending to avoid a shortfall."
+                ),
+            })
+        else:
+            insights.append({
+                "type": "positive",
+                "text": (
+                    f"You're on track this month — income ({usd(month_income)}) "
+                    f"is ahead of expenses ({usd(month_expenses)}). Keep it up."
+                ),
+            })
+
+    # ── Rule 4: Category-specific savings tip ───────────────────────────────
+    # Keyed off the name of the single biggest expense category.
+    if spending_by_category:
+        top_name = spending_by_category[0]["category"].lower()
+
+        if any(kw in top_name for kw in ("housing", "rent", "mortgage")):
+            tip_text = (
+                "Consider negotiating your lease at renewal or exploring refinancing options. "
+                "Even a 5% rent reduction saves hundreds of dollars per year."
+            )
+        elif any(kw in top_name for kw in ("food", "groceries", "dining", "restaurant")):
+            tip_text = (
+                "Meal planning for the week can cut food spending by 20–30%. "
+                "Try cooking in batches on Sundays to reduce mid-week takeout."
+            )
+        elif any(kw in top_name for kw in ("entertainment", "subscriptions", "streaming")):
+            tip_text = (
+                "Audit your subscriptions — most people have 2–3 they forgot about. "
+                "Canceling unused ones is instant, effortless savings."
+            )
+        elif any(kw in top_name for kw in ("transport", "car", "gas", "fuel")):
+            tip_text = (
+                "Combining errands into fewer trips and checking gas prices with an app "
+                "can noticeably reduce transport costs each month."
+            )
+        elif any(kw in top_name for kw in ("shopping", "clothing", "clothes")):
+            tip_text = (
+                "Try a 30-day list: write down non-essential purchases and only buy them "
+                "after 30 days. Most impulse buys feel unnecessary by then."
+            )
+        else:
+            top_display = spending_by_category[0]["category"]
+            tip_text = (
+                f"Setting a monthly cap on {top_display} and checking it weekly "
+                f"is the most reliable way to reduce spending in your top category."
+            )
+
+        insights.append({"type": "tip", "text": tip_text})
+
+    # ── Rule 5: Overall savings rate ────────────────────────────────────────
+    if total_income > 0:
+        savings_rate = pct(total_income - total_expenses, total_income)
+        monthly_gap  = round((total_income * 0.20 - (total_income - total_expenses)) / 12, 2)
+
+        if savings_rate >= 20:
+            insights.append({
+                "type": "positive",
+                "text": (
+                    f"Your overall savings rate is {savings_rate}% — meeting or exceeding "
+                    f"the 20% target in the 50/30/20 rule. Great financial discipline."
+                ),
+            })
+        elif savings_rate > 0:
+            insights.append({
+                "type": "tip",
+                "text": (
+                    f"Your overall savings rate is {savings_rate}%. "
+                    f"The 50/30/20 rule recommends saving 20% of income. "
+                    f"Putting an extra {usd(monthly_gap)}/month aside would get you there."
+                ),
+            })
+        else:
+            insights.append({
+                "type": "warning",
+                "text": (
+                    "Your total expenses have exceeded your total income. "
+                    "Building even a small emergency fund should be the first priority."
+                ),
+            })
+
+    # If there are no transactions at all, give a helpful nudge instead
+    if not insights:
+        insights.append({
+            "type": "tip",
+            "text": "No transaction data found. Add some transactions to see personalised insights.",
+        })
+
+    return jsonify({"insights": insights})
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
