@@ -30,6 +30,9 @@ finance-dashboard/
 ├── database.py            ← database setup and helper functions
 ├── finance.db             ← SQLite database file (auto-created, not committed to git)
 ├── requirements.txt       ← Python dependencies
+├── Procfile               ← tells Render how to start the server (gunicorn)
+├── render.yaml            ← Render deployment config
+├── test_app.py            ← automated API tests (unittest)
 ├── static/
 │   ├── style.css          ← dashboard styles
 │   └── script.js          ← frontend logic and chart rendering
@@ -55,6 +58,7 @@ balance     REAL DEFAULT 0
 ```sql
 id          INTEGER PRIMARY KEY
 name        TEXT NOT NULL        -- e.g. "Groceries", "Rent", "Entertainment"
+color       TEXT NOT NULL        -- hex color for charts, e.g. "#4CAF50"
 ```
 
 **transactions** — individual income or expense records
@@ -78,6 +82,7 @@ date            TEXT NOT NULL       -- stored as YYYY-MM-DD string
 | GET | `/api/accounts` | Return all accounts |
 | GET | `/api/categories` | Return all categories |
 | GET | `/api/summary` | Return totals for dashboard charts |
+| GET | `/api/insights` | Return 4–5 rule-based financial insights |
 
 All responses are JSON.
 
@@ -85,10 +90,14 @@ All responses are JSON.
 
 ## Frontend Features
 
-- Summary cards: total balance, total income, total expenses
-- Bar or pie chart of spending by category (using Chart.js)
-- Transaction table with date, description, category, and amount
-- A form to add new transactions
+- Summary cards: total balance, total income, total expenses, top spending category
+- Doughnut chart of spending by category (using Chart.js)
+- Monthly bar chart and weekly line chart of spending trends, with a toggle to switch views
+- Transaction table with date, description, category badge, account, and amount
+- Filter bar: filter transactions by category and date range
+- Form to add new transactions (with real-time dashboard refresh on submit)
+- Monthly budget tracker: set a budget, see a progress bar that turns red near the limit
+- AI Insights panel: one-click rule-based analysis with ⚠️ warnings, 💡 tips, and ✅ positive observations
 
 ---
 

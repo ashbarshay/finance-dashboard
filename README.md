@@ -4,7 +4,7 @@
 
 ---
 
-A full-stack personal finance web app built with Python, Flask, and plain JavaScript. It lets you track transactions across multiple accounts, visualize spending by category, and see weekly expense trends — all from a clean, single-page dashboard.
+A full-stack personal finance web app built with Python, Flask, and plain JavaScript. It lets you track transactions across multiple accounts, visualize spending by category, monitor your monthly budget, and get smart financial insights — all from a clean, single-page dashboard.
 
 Built as a learning project while exploring full-stack development with the help of Claude Code.
 
@@ -12,11 +12,14 @@ Built as a learning project while exploring full-stack development with the help
 
 ## Features
 
-- **Summary cards** — total balance across all accounts, total income, and total expenses at a glance
+- **Summary cards** — total balance across all accounts, total income, total expenses, and top spending category at a glance
 - **Spending by category** — doughnut chart showing where your money goes (Groceries, Dining, Utilities, etc.)
-- **Weekly spending trend** — line chart grouping expenses by week to reveal spending patterns over time
+- **Spending trends** — bar chart (monthly) and line chart (weekly) with a toggle to switch between views
 - **Transaction table** — recent transactions with date, description, category badge, and account
+- **Filter bar** — filter transactions by category and custom date range
 - **Add transaction form** — log a new income or expense with real-time dashboard refresh on submit
+- **Monthly budget tracker** — set a monthly spending target and track progress with a color-coded bar that turns red near the limit
+- **AI Insights** — one-click analysis of your real spending data: flags housing costs against the 50/30/20 rule, identifies top-category concentration, compares this month's income vs. expenses, and calculates your overall savings rate
 - **Sample data** — seed script included to populate the database with realistic demo transactions
 
 ---
@@ -105,6 +108,7 @@ This was my first full-stack project. Some of the things that clicked while buil
 
 - [x] **Date filtering** — filter the transaction table by category and custom date range
 - [x] **Budget tracker** — set a monthly budget and track progress with a color-coded progress bar
+- [x] **AI Insights** — rule-based financial analysis with warnings, tips, and positive observations
 - [ ] **Delete / edit transactions** — currently you can only add, not modify existing records
 - [ ] **Account management** — a UI to add and update accounts instead of only via the seed script
 - [ ] **Persistent storage on Render** — swap SQLite for PostgreSQL so data survives redeployments

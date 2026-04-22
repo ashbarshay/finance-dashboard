@@ -1,4 +1,5 @@
 # Finance Dashboard - Built with Claude Code
+from datetime import date
 from flask import Flask, jsonify, request, render_template
 from database import get_connection, init_db, seed_data
 
@@ -254,8 +255,6 @@ def get_insights():
     frontend can colour-code them. No external API is needed — all analysis
     runs in Python against the local database.
     """
-    from datetime import date
-
     conn = get_connection()
     try:
         # --- All-time income (sum of positive transaction amounts) ---
@@ -321,8 +320,10 @@ def get_insights():
          if any(kw in c["category"].lower() for kw in housing_keywords)),
         None,
     )
+    housing_already_covered = False
     if housing_cat and total_expenses > 0:
         h_pct = pct(housing_cat["total"], total_expenses)
+        housing_already_covered = True
         if h_pct > 30:
             insights.append({
                 "type": "warning",
@@ -342,7 +343,14 @@ def get_insights():
             })
 
     # ── Rule 2: Top spending category ───────────────────────────────────────
-    if spending_by_category and total_expenses > 0:
+    # Skip if the top category is housing — Rule 1 already covered it, and
+    # showing two housing insights back-to-back would feel repetitive.
+    top_is_housing = (
+        housing_already_covered
+        and spending_by_category
+        and any(kw in spending_by_category[0]["category"].lower() for kw in housing_keywords)
+    )
+    if spending_by_category and total_expenses > 0 and not top_is_housing:
         top = spending_by_category[0]
         top_pct = pct(top["total"], total_expenses)
         if top_pct > 40:
@@ -427,7 +435,6 @@ def get_insights():
     # ── Rule 5: Overall savings rate ────────────────────────────────────────
     if total_income > 0:
         savings_rate = pct(total_income - total_expenses, total_income)
-        monthly_gap  = round((total_income * 0.20 - (total_income - total_expenses)) / 12, 2)
 
         if savings_rate >= 20:
             insights.append({
@@ -438,6 +445,8 @@ def get_insights():
                 ),
             })
         elif savings_rate > 0:
+            # Calculate how much extra per month would close the gap to 20%
+            monthly_gap = round((total_income * 0.20 - (total_income - total_expenses)) / 12, 2)
             insights.append({
                 "type": "tip",
                 "text": (
